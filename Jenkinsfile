@@ -6,7 +6,9 @@ pipeline {
         maven 'M2_HOME'
     }
 
-
+environment {
+        IMAGE_NAME = 'sirinebechikh/student-management'
+    }
 
     stages {
 
@@ -31,6 +33,12 @@ pipeline {
         stage('Archive Artifact') {
             steps {
                 archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+            }
+        }
+
+         stage('Docker Build') {
+            steps {
+                sh 'docker build -t ${IMAGE_NAME}:latest .'
             }
         }
     }
