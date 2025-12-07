@@ -2,13 +2,11 @@ pipeline {
     agent any
 
     tools {
-        jdk 'Java17'
-        maven 'Maven3'
+        jdk 'java 17'
+        maven 'M2_HOME'
     }
 
-    environment {
-        IMAGE_NAME = 'khalilessouri/student-management'
-    }
+
 
     stages {
 
