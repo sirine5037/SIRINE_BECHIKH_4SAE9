@@ -6,11 +6,13 @@ pipeline {
         maven 'M2_HOME'
     }
 
-environment {
+    environment {
         IMAGE_NAME = 'sirinebechikh/student-management'
     }
 
     stages {
+
+
 
         stage('Checkout') {
             steps {
@@ -30,17 +32,20 @@ environment {
             }
         }
 
+
+
         stage('Archive Artifact') {
             steps {
                 archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
             }
         }
 
-         stage('Docker Build') {
+        stage('Docker Build') {
             steps {
                 sh 'docker build -t ${IMAGE_NAME}:latest .'
             }
         }
+
         stage('Push to DockerHub') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
@@ -51,8 +56,10 @@ environment {
                    '''
                }
            }
-           }
+       }
     }
+
+
 
     post {
         success {
