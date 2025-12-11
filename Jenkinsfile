@@ -7,7 +7,7 @@ pipeline {
     }
 
     environment {
-        IMAGE_NAME = 'sirinebechikh/student-management'
+        IMAGE_NAME = 'sirinebb/sirinebechikh'
     }
 
     stages {
