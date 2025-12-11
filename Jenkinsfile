@@ -1,3 +1,5 @@
+
+
 pipeline {
     agent any
 
@@ -49,13 +51,20 @@ pipeline {
         stage('Push to DockerHub') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh '''
-                       echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                       docker push ${IMAGE_NAME}:latest
-                       docker logout
-                   '''
-               }
-           }
+                    script {
+                        // 1. Login
+                        sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+
+                        // 2. Push with Retry (Fixes Broken Pipe error)
+                        retry(3) {
+                            sh "docker push ${IMAGE_NAME}:latest"
+                        }
+
+                        // 3. Logout
+                        sh 'docker logout'
+                    }
+                }
+            }
        }
     }
 
