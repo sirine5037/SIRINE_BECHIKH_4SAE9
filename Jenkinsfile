@@ -10,37 +10,44 @@ pipeline {
         IMAGE_NAME = 'sirinebb/sirinebechikh'
         SONARQUBE = 'SonarQube'
         NAMESPACE = 'devops'
-        // Variables pour éviter les erreurs
-        DOCKER_BUILDKIT = '1'
     }
     
     stages {
         stage('Declarative: Checkout SCM') {
             steps {
+                echo '=== Checkout du code source ==='
                 checkout scm
             }
         }
         
         stage('Declarative: Tool Install') {
             steps {
-                echo 'Outils Java et Maven configurés'
+                echo '=== Vérification des outils ==='
+                sh '''
+                    echo "Java version:"
+                    java -version
+                    echo ""
+                    echo "Maven version:"
+                    mvn -version
+                '''
             }
         }
         
         stage('Checkout') {
             steps {
-                echo 'Code source récupéré'
+                echo '=== Code source récupéré ==='
+                sh 'ls -la'
             }
         }
         
         stage('Run Tests') {
             steps {
+                echo '=== Exécution des tests ==='
                 script {
                     try {
-                        sh 'mvn clean test'
+                        sh 'mvn test'
                     } catch (Exception e) {
-                        echo "Warning: Tests failed - ${e.message}"
-                        // Ne pas bloquer le pipeline si tests échouent
+                        echo "⚠️ Warning: Tests failed - ${e.message}"
                         currentBuild.result = 'UNSTABLE'
                     }
                 }
@@ -49,26 +56,45 @@ pipeline {
         
         stage('Build') {
             steps {
-                sh 'mvn clean package -DskipTests'
-                
-                // Vérifier que le JAR a été créé
+                echo '=== Build Maven ==='
                 script {
-                    def jarFile = sh(
-                        script: 'ls target/*.jar 2>/dev/null',
-                        returnStdout: true
-                    ).trim()
-                    
-                    if (!jarFile) {
-                        error "JAR file not found in target/ directory!"
+                    try {
+                        // Nettoyage et build
+                        sh 'mvn clean package -DskipTests'
+                        
+                        // Vérifier que le JAR existe
+                        sh '''
+                            echo "Contenu du dossier target:"
+                            ls -lh target/
+                            echo ""
+                            echo "Fichiers JAR trouvés:"
+                            find target/ -name "*.jar" -type f
+                        '''
+                        
+                        // Vérification explicite
+                        def jarExists = sh(
+                            script: 'test -f target/student-management-0.0.1-SNAPSHOT.jar && echo "true" || echo "false"',
+                            returnStdout: true
+                        ).trim()
+                        
+                        if (jarExists == "false") {
+                            error "❌ JAR file not found!"
+                        }
+                        
+                        echo "✅ JAR créé avec succès"
+                        
+                    } catch (Exception e) {
+                        echo "❌ Build failed: ${e.message}"
+                        sh 'cat target/surefire-reports/*.txt || true'
+                        error "Build Maven a échoué"
                     }
-                    
-                    echo "✅ JAR créé : ${jarFile}"
                 }
             }
         }
         
         stage('SonarQube Analysis') {
             steps {
+                echo '=== Analyse SonarQube ==='
                 script {
                     try {
                         withSonarQubeEnv('SonarQube') {
@@ -79,8 +105,9 @@ pipeline {
                                 -Dsonar.login=${SONAR_AUTH_TOKEN}
                             '''
                         }
+                        echo "✅ Analyse SonarQube terminée"
                     } catch (Exception e) {
-                        echo "Warning: SonarQube analysis failed - ${e.message}"
+                        echo "⚠️ SonarQube analysis failed: ${e.message}"
                         currentBuild.result = 'UNSTABLE'
                     }
                 }
@@ -89,13 +116,13 @@ pipeline {
         
         stage('Archive Artifact') {
             steps {
+                echo '=== Archivage des artifacts ==='
                 script {
-                    // Vérifier si le fichier JAR existe
-                    def jarFiles = sh(script: 'ls target/*.jar 2>/dev/null || true', returnStdout: true).trim()
-                    if (jarFiles) {
+                    try {
                         archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
-                    } else {
-                        echo 'Warning: No JAR file found to archive'
+                        echo "✅ Artifact archivé"
+                    } catch (Exception e) {
+                        echo "⚠️ Archive failed: ${e.message}"
                     }
                 }
             }
@@ -103,24 +130,42 @@ pipeline {
         
         stage('Docker Build') {
             steps {
+                echo '=== Build de l\'image Docker ==='
                 script {
                     try {
-                        // Vérifier si Dockerfile existe
+                        // Vérifier Dockerfile
                         sh '''
+                            echo "Vérification du Dockerfile:"
                             if [ ! -f Dockerfile ]; then
-                                echo "ERROR: Dockerfile not found!"
+                                echo "❌ Dockerfile not found!"
+                                exit 1
+                            fi
+                            cat Dockerfile
+                            echo ""
+                        '''
+                        
+                        // Vérifier que le JAR existe avant le build Docker
+                        sh '''
+                            if [ ! -f target/student-management-0.0.1-SNAPSHOT.jar ]; then
+                                echo "❌ JAR not found for Docker build!"
                                 exit 1
                             fi
                         '''
                         
-                        // Build l'image Docker
-                        sh "docker build -t ${IMAGE_NAME}:latest ."
+                        // Build Docker
+                        sh """
+                            docker build -t ${IMAGE_NAME}:latest .
+                            docker tag ${IMAGE_NAME}:latest ${IMAGE_NAME}:${BUILD_NUMBER}
+                        """
                         
-                        // Tag avec le numéro de build
-                        sh "docker tag ${IMAGE_NAME}:latest ${IMAGE_NAME}:${BUILD_NUMBER}"
+                        echo "✅ Image Docker créée"
+                        
+                        // Lister les images
+                        sh "docker images | grep ${IMAGE_NAME} || true"
                         
                     } catch (Exception e) {
-                        error "Docker build failed: ${e.message}"
+                        echo "❌ Docker build failed: ${e.message}"
+                        error "Build Docker a échoué"
                     }
                 }
             }
@@ -128,6 +173,7 @@ pipeline {
         
         stage('Push to DockerHub') {
             steps {
+                echo '=== Push vers DockerHub ==='
                 script {
                     try {
                         withCredentials([usernamePassword(
@@ -135,20 +181,24 @@ pipeline {
                             usernameVariable: 'DOCKER_USER',
                             passwordVariable: 'DOCKER_PASS'
                         )]) {
-                            // Login à DockerHub
-                            sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
-                            
-                            // Push avec retry
-                            retry(3) {
-                                sh "docker push ${IMAGE_NAME}:latest"
-                                sh "docker push ${IMAGE_NAME}:${BUILD_NUMBER}"
-                            }
-                            
-                            // Logout
-                            sh 'docker logout'
+                            sh '''
+                                echo "Connexion à DockerHub..."
+                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                                
+                                echo "Push de l'image latest..."
+                                docker push ${IMAGE_NAME}:latest
+                                
+                                echo "Push de l'image ${BUILD_NUMBER}..."
+                                docker push ${IMAGE_NAME}:${BUILD_NUMBER}
+                                
+                                echo "Déconnexion..."
+                                docker logout
+                            '''
                         }
+                        echo "✅ Images pushées sur DockerHub"
                     } catch (Exception e) {
-                        error "Docker push failed: ${e.message}"
+                        echo "❌ Docker push failed: ${e.message}"
+                        error "Push Docker a échoué"
                     }
                 }
             }
@@ -156,7 +206,7 @@ pipeline {
         
         stage('Declarative: Post Actions') {
             steps {
-                echo 'Nettoyage des images Docker locales'
+                echo '=== Nettoyage ==='
                 sh """
                     docker rmi ${IMAGE_NAME}:latest || true
                     docker rmi ${IMAGE_NAME}:${BUILD_NUMBER} || true
@@ -168,11 +218,11 @@ pipeline {
     post {
         success {
             echo '========================================='
-            echo '✅ PIPELINE SUCCESS - CONFORME AU TP'
+            echo '✅ PIPELINE SUCCESS'
             echo '========================================='
-            echo '✅ Code analysé par SonarQube'
-            echo '✅ Image Docker pushée sur DockerHub'
-            echo "✅ Image: ${IMAGE_NAME}:${BUILD_NUMBER}"
+            echo "✅ Code analysé par SonarQube"
+            echo "✅ Image Docker: ${IMAGE_NAME}:${BUILD_NUMBER}"
+            echo "✅ Image pushée sur DockerHub"
             echo '========================================='
         }
         
@@ -180,7 +230,7 @@ pipeline {
             echo '========================================='
             echo '❌ PIPELINE FAILED'
             echo '========================================='
-            echo 'Vérifiez les logs pour plus de détails'
+            echo 'Vérifiez les logs ci-dessus pour plus de détails'
             echo '========================================='
         }
         
@@ -188,17 +238,18 @@ pipeline {
             echo '========================================='
             echo '⚠️ PIPELINE UNSTABLE'
             echo '========================================='
-            echo 'Certains tests ou analyses ont échoué'
+            echo 'Certaines étapes ont échoué mais le build continue'
             echo '========================================='
         }
         
         always {
-            echo 'Pipeline terminée - Atelier Kubernetes'
-            // Nettoyage
+            echo 'Nettoyage du workspace...'
             cleanWs(
                 deleteDirs: true,
                 disableDeferredWipeout: true,
-                patterns: [[pattern: 'target/**', type: 'INCLUDE']]
+                patterns: [
+                    [pattern: 'target/**', type: 'INCLUDE']
+                ]
             )
         }
     }
