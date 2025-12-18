@@ -92,27 +92,27 @@ pipeline {
             }
         }
         
-        stage('SonarQube Analysis') {
-            steps {
-                echo '=== Analyse SonarQube ==='
-                script {
-                    try {
-                        withSonarQubeEnv('SonarQube') {
-                            sh '''
-                                mvn sonar:sonar \
-                                -Dsonar.projectKey=student \
-                                -Dsonar.host.url=${SONAR_HOST_URL} \
-                                -Dsonar.login=${SONAR_AUTH_TOKEN}
-                            '''
-                        }
-                        echo "✅ Analyse SonarQube terminée"
-                    } catch (Exception e) {
-                        echo "⚠️ SonarQube analysis failed: ${e.message}"
-                        currentBuild.result = 'UNSTABLE'
-                    }
+  stage('SonarQube Analysis') {
+    steps {
+        echo "=== Analyse SonarQube ==="
+        script {
+            try {
+                withSonarQubeEnv('SonarQube') {
+                    sh """
+                        mvn sonar:sonar \
+                          -Dsonar.projectKey=student \
+                          -Dsonar.host.url=http://localhost:9000 \
+                          -Dsonar.token=\${SONAR_AUTH_TOKEN}
+                    """
                 }
+                echo "✅ SonarQube analysis completed"
+            } catch (Exception e) {
+                echo "⚠️ SonarQube analysis failed: ${e.message}"
+                currentBuild.result = 'UNSTABLE'
             }
         }
+    }
+}
         
         stage('Archive Artifact') {
             steps {
