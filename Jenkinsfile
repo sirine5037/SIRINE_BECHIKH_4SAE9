@@ -50,6 +50,20 @@ pipeline {
         stage('Build') {
             steps {
                 sh 'mvn clean package -DskipTests'
+                
+                // Vérifier que le JAR a été créé
+                script {
+                    def jarFile = sh(
+                        script: 'ls target/*.jar 2>/dev/null',
+                        returnStdout: true
+                    ).trim()
+                    
+                    if (!jarFile) {
+                        error "JAR file not found in target/ directory!"
+                    }
+                    
+                    echo "✅ JAR créé : ${jarFile}"
+                }
             }
         }
         
